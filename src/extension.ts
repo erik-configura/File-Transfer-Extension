@@ -31,17 +31,14 @@ export function activate(context: vscode.ExtensionContext) {
   if (vscode.window.registerWebviewPanelSerializer) {
     context.subscriptions.push(
       vscode.window.registerWebviewPanelSerializer('fileTransfer', {
-        async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
+        async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, _state: any) {
+          // Reuse the restored panel rather than disposing and recreating it.
+          // Folder paths are persisted in workspace state and restored via requestInitialState.
           panel = webviewPanel;
-          panel.webview.options = { enableScripts: true, enableCommandUris: true };
-          panel.webview.html = getWebviewContent();
-          setupPanelMessageHandling(panel);
-          panel.onDidDispose(() => {
-            if (panel === webviewPanel) {
-              panel = undefined;
-            }
-          });
-          await restorePanelState();
+          webviewPanel.webview.options = { enableScripts: true, enableCommandUris: true };
+          webviewPanel.webview.html = getWebviewContent();
+          setupPanelMessageHandling(webviewPanel);
+          webviewPanel.onDidDispose(() => { panel = undefined; });
         }
       })
     );
@@ -69,8 +66,6 @@ function openFileTransferPanel(context: vscode.ExtensionContext) {
   panel.onDidDispose(() => {
     panel = undefined;
   });
-
-  restorePanelState();
 }
 
 function setupPanelMessageHandling(panelInstance: vscode.WebviewPanel) {

@@ -2,8 +2,8 @@
   "name": "file-transfer-extension",
   "displayName": "File Transfer",
   "description": "Copy files between locations with a dual-pane interface",
-  "version": "0.0.1",
-  "publisher": "erik-configura",
+  "version": "0.0.2",
+  "publisher": "Erik Knutsson",
   "author": {
     "name": "Erik Knutsson",
     "email": "erik.knutsson@configura.com"
@@ -19,7 +19,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:fileTransfer.openPanel"
+    "onCommand:fileTransfer.openPanel",
+    "onWebviewPanel:fileTransfer"
   ],
   "main": "./dist/extension.js",
   "contributes": {
