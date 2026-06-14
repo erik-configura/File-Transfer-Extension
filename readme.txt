@@ -1,18 +1,21 @@
-File Transfer VS Code Extension
+File Transfer VS Code Extension (v0.0.3)
 
-This archive contains the packaged VS Code extension and source files for local installation.
+This ZIP contains:
+- file-transfer-extension-0.0.3.vsix
+- readme.txt
 
-Installation steps:
+Install on another computer:
 
-1. Copy the ZIP file to the target computer.
-2. Extract the ZIP contents to a local folder.
+1. Copy package-file-transfer-extension.zip to the target computer.
+2. Extract the ZIP to any local folder.
 3. Open VS Code.
-4. Press Ctrl+Shift+P to open the command palette.
-5. Run "Extensions: Install from VSIX...".
-6. Navigate to the extracted folder and select the file-transfer-extension-0.0.1.vsix file.
-7. After installation, restart VS Code if prompted.
-8. Open the command palette again and run "Open File Transfer Panel" or use Ctrl+Shift+F.
+4. Open the command palette (Ctrl+Shift+P).
+5. Run: Extensions: Install from VSIX...
+6. Select: file-transfer-extension-0.0.3.vsix
+7. Restart VS Code if prompted.
+8. Run command: Open File Transfer Panel
 
 Notes:
-- The extension includes the bundled compiled extension in the .vsix file.
-- If you want to modify the extension source before installing, use the source files in the extracted folder.
+- Uninstall older versions of the extension first if you want a clean upgrade.
+- You can also install from terminal on the target machine:
+	code --install-extension file-transfer-extension-0.0.3.vsix

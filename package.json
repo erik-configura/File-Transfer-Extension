@@ -2,7 +2,7 @@
   "name": "file-transfer-extension",
   "displayName": "File Transfer",
   "description": "Copy files between locations with a dual-pane interface",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "Erik Knutsson",
   "author": {
     "name": "Erik Knutsson",
