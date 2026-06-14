@@ -139,6 +139,11 @@ function setupPanelMessageHandling(panelInstance: vscode.WebviewPanel) {
         case 'showDiff':
           await showDiffPanel(message.files);
           break;
+        case 'showDiffForFile':
+          if (message.file) {
+            await showDiffPanel([message.file]);
+          }
+          break;
       }
     },
     undefined,

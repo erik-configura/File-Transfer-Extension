@@ -137,6 +137,26 @@ export function getWebviewContent(): string {
       flex-shrink: 0;
     }
 
+    .diff-open-btn {
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .diff-open-btn:hover {
+      background: color-mix(in srgb, var(--vscode-charts-red) 18%, transparent);
+    }
+
+    .diff-all-btn {
+      background: transparent;
+      border: none;
+      padding: 0;
+      min-width: auto;
+    }
+
+    .diff-all-btn:hover {
+      background: transparent;
+    }
+
     .center-controls {
       display: flex;
       flex-direction: column;
@@ -224,7 +244,9 @@ export function getWebviewContent(): string {
     <div class="center-controls">
       <button class="transfer-btn" title="Transfer to destination" onclick="transferToDestination()">→</button>
       <button class="transfer-btn" title="Transfer to source" onclick="transferToSource()">←</button>
-      <button class="transfer-btn" title="Show file differences" onclick="showDiff()" style="margin-top: 8px;">◬</button>
+      <button class="transfer-btn diff-all-btn" title="Show all file differences" onclick="showDiff()" style="margin-top: 8px;">
+        <span class="diff-indicator">DIFF</span>
+      </button>
     </div>
 
     <!-- Destination Pane -->
@@ -317,6 +339,14 @@ export function getWebviewContent(): string {
       vscode.postMessage({ command: 'showDiff', files: selectedDestFiles });
     }
 
+    function showDiffForFile(index) {
+      const file = destFiles[index];
+      if (!file) {
+        return;
+      }
+      vscode.postMessage({ command: 'showDiffForFile', file: file });
+    }
+
     function toggleSourceFileSelection(index) {
       const file = sourceFiles[index];
       const idx = selectedSourceFiles.findIndex(f => f.path === file.path);
@@ -383,7 +413,7 @@ export function getWebviewContent(): string {
         parts.push('<span class="file-icon">📄</span>');
         parts.push('<span class="file-name">' + file.name + '</span>');
         if (isDifferent) {
-          parts.push('<span class="diff-indicator" title="Different from referenced source">DIFF</span>');
+          parts.push('<button class="diff-indicator diff-open-btn" data-index="' + index + '" title="Open diff for this file">DIFF</button>');
         }
         parts.push('</li>');
         return parts.join('');
@@ -418,6 +448,15 @@ export function getWebviewContent(): string {
         item.addEventListener('click', () => {
           const index = Number(item.getAttribute('data-index'));
           toggleDestFileSelection(index);
+        });
+      });
+
+      const diffButtons = list.querySelectorAll('.diff-open-btn');
+      diffButtons.forEach(button => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const index = Number(button.getAttribute('data-index'));
+          showDiffForFile(index);
         });
       });
     }
