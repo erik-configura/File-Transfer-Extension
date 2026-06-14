@@ -225,15 +225,13 @@ export function getWebviewContent(): string {
       <div class="pane-header">
         <div>
           <div class="pane-title">Source</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-direction:column;">
-            <div class="pane-path" id="sourcePath">No folder selected</div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <button class="open-folder-btn" onclick="navigateUp()" id="upBtn" title="Up">⬆</button>
-              <button class="open-folder-btn" onclick="refreshSource()" id="refreshBtn" title="Refresh">⟳</button>
-            </div>
-          </div>
+          <div class="pane-path" id="sourcePath">No folder selected</div>
         </div>
-        <button class="open-folder-btn" onclick="selectSourceFolder()">Open Folder</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="open-folder-btn" onclick="navigateUp()" id="upBtn" title="Up">⬆</button>
+          <button class="open-folder-btn" onclick="refreshSource()" id="refreshBtn" title="Refresh">⟳</button>
+          <button class="open-folder-btn" onclick="selectSourceFolder()">Open Folder</button>
+        </div>
       </div>
       <ul class="file-list" id="sourceList">
         <div class="empty-state">Select a source folder to begin</div>
@@ -383,8 +381,11 @@ export function getWebviewContent(): string {
       list.innerHTML = sourceFiles.map(function(file, index) {
         const isSelected = selectedSourceFiles.some(f => f.path === file.path);
         const icon = file.isDirectory ? '📁' : '📄';
+        const tooltip = file.isDirectory
+          ? file.path
+          : (file.relativePath ? (file.relativePath + ' | ' + file.path) : file.path);
         var parts = [];
-        parts.push('<li class="file-item ' + (isSelected ? 'selected' : '') + '" data-index="' + index + '" data-is-directory="' + file.isDirectory + '">');
+        parts.push('<li class="file-item ' + (isSelected ? 'selected' : '') + '" data-index="' + index + '" data-is-directory="' + file.isDirectory + '" title="' + tooltip + '">');
         parts.push('<span class="file-icon">' + icon + '</span>');
         parts.push('<span class="file-name">' + file.name + '</span>');
         if (!file.isDirectory) {
