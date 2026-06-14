@@ -126,6 +126,17 @@ export function getWebviewContent(): string {
       font-size: 13px;
     }
 
+    .diff-indicator {
+      font-size: 11px;
+      line-height: 1;
+      border: 1px solid var(--vscode-charts-red);
+      color: var(--vscode-charts-red);
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
     .center-controls {
       display: flex;
       flex-direction: column;
@@ -245,6 +256,7 @@ export function getWebviewContent(): string {
     let selectedSourceFiles = [];
     let selectedDestFiles = [];
     let destMetadata = {}; // destName -> originalPath
+    let destDiffFlags = {}; // destName -> true when different from referenced source
 
     function selectSourceFolder() {
       vscode.postMessage({ command: 'selectSourceFolder' });
@@ -365,10 +377,14 @@ export function getWebviewContent(): string {
       list.innerHTML = destFiles.map(function(file, index) {
         const isSelected = selectedDestFiles.some(f => f.path === file.path);
         const orig = destMetadata[file.name] || file.path;
+        const isDifferent = !!destDiffFlags[file.name];
         var parts = [];
-        parts.push('<li class="file-item ' + (isSelected ? 'selected' : '') + '" data-index="' + index + '" title="' + orig + '">');
+        parts.push('<li class="file-item ' + (isSelected ? 'selected' : '') + '" data-index="' + index + '" title="' + orig + (isDifferent ? ' (Different from source)' : '') + '">');
         parts.push('<span class="file-icon">📄</span>');
         parts.push('<span class="file-name">' + file.name + '</span>');
+        if (isDifferent) {
+          parts.push('<span class="diff-indicator" title="Different from referenced source">DIFF</span>');
+        }
         parts.push('</li>');
         return parts.join('');
       }).join('');
@@ -428,6 +444,7 @@ export function getWebviewContent(): string {
           destFolderPath = message.path;
           destFiles = message.files || [];
           destMetadata = message.metadata || {};
+          destDiffFlags = message.diffFlags || {};
           selectedDestFiles = [];
           document.getElementById('destPath').textContent = destFolderPath;
           updateDestUI();
@@ -436,6 +453,7 @@ export function getWebviewContent(): string {
         case 'refreshDestinationComplete':
           destFiles = message.files || [];
           destMetadata = message.metadata || destMetadata;
+          destDiffFlags = message.diffFlags || {};
           updateDestUI();
           break;
           
@@ -455,6 +473,12 @@ export function getWebviewContent(): string {
         case 'metadataUpdated':
           destMetadata = message.metadata || {};
           destFiles = message.files || [];
+          destDiffFlags = message.diffFlags || {};
+          updateDestUI();
+          break;
+
+        case 'destinationIndicatorsUpdated':
+          destDiffFlags = message.diffFlags || {};
           updateDestUI();
           break;
           

@@ -4,13 +4,19 @@ import * as fs from 'fs';
 import { getWebviewContent } from './webviewContent';
 import { listDestinationFiles, copyFile, deleteFile, listDirContents, copyFileToDir, fileExists, moveFile } from './fileManager';
 import * as metadata from './metadataManager';
-import { computeDiffCandidates } from './diffSelector';
+import { computeDiffCandidates, computeDiffFlags } from './diffSelector';
 let panel: vscode.WebviewPanel | undefined;
 let sourceFolderPath: string | undefined;
 let destFolderPath: string | undefined;
 let currentSourceBrowsePath: string | undefined;
 let currentDestMetadata: Record<string, string> = {};
+let currentDestDiffFlags: Record<string, boolean> = {};
 let extensionContext: vscode.ExtensionContext;
+let sourceFolderWatcher: vscode.FileSystemWatcher | undefined;
+let destFolderWatcher: vscode.FileSystemWatcher | undefined;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingSourceRefresh = false;
+let pendingDestRefresh = false;
 
 export function activate(context: vscode.ExtensionContext) {
   extensionContext = context;
@@ -18,6 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
   sourceFolderPath = context.workspaceState.get('fileTransfer.sourceFolderPath');
   destFolderPath = context.workspaceState.get('fileTransfer.destFolderPath');
   currentSourceBrowsePath = context.workspaceState.get('fileTransfer.currentSourceBrowsePath');
+
+  setupSourceFolderWatcher(sourceFolderPath);
+  setupDestFolderWatcher(destFolderPath);
 
   let disposable = vscode.commands.registerCommand(
     'fileTransfer.openPanel',
@@ -27,6 +36,11 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      await handleSavedFile(doc.uri.fsPath);
+    })
+  );
 
   if (vscode.window.registerWebviewPanelSerializer) {
     context.subscriptions.push(
@@ -83,6 +97,7 @@ function setupPanelMessageHandling(panelInstance: vscode.WebviewPanel) {
           if (sourceFolderPath && currentSourceBrowsePath && panel) {
             const files = await listDirContents(currentSourceBrowsePath!);
             panel.webview.postMessage({ command: 'sourceRefreshed', files: mapDirEntries(files) });
+            await refreshDestinationIndicators();
           }
           break;
         case 'enterDirectory':
@@ -159,14 +174,7 @@ async function restorePanelState(panelInstance?: vscode.WebviewPanel) {
   }
 
   if (destFolderPath) {
-    currentDestMetadata = await metadata.loadMetadata(destFolderPath);
-    const files = await listDestinationFiles(destFolderPath);
-    webviewPanel.webview.postMessage({
-      command: 'destinationFolderSelected',
-      path: destFolderPath,
-      files: files.map(f => ({ name: f.name, path: f.path })),
-      metadata: currentDestMetadata
-    });
+    await postDestinationState(webviewPanel, 'destinationFolderSelected');
   }
 }
 
@@ -183,18 +191,19 @@ async function selectFolder(folderType: 'source' | 'destination') {
     if (folderType === 'source') {
       sourceFolderPath = folderPath;
       currentSourceBrowsePath = folderPath;
+      setupSourceFolderWatcher(sourceFolderPath);
       await persistState();
       const entries = await listDirContents(folderPath);
       if (panel) {
         panel.webview.postMessage({ command: 'sourceFolderSelected', path: folderPath, browsePath: currentSourceBrowsePath, files: mapDirEntries(entries) });
+        await refreshDestinationIndicators();
       }
     } else {
       destFolderPath = folderPath;
+      setupDestFolderWatcher(destFolderPath);
       await persistState();
-      currentDestMetadata = await metadata.loadMetadata(folderPath);
-      const files = await listDestinationFiles(folderPath);
       if (panel) {
-        panel.webview.postMessage({ command: 'destinationFolderSelected', path: folderPath, files: files.map(f => ({ name: f.name, path: f.path })), metadata: currentDestMetadata });
+        await postDestinationState(panel, 'destinationFolderSelected');
       }
     }
   }
@@ -223,9 +232,7 @@ async function transferFiles(
         }
         await metadata.updateMetadata(destFolderPath, destName, file.path);
       }
-      currentDestMetadata = await metadata.loadMetadata(destFolderPath!);
-      const destFiles = await listDestinationFiles(destFolderPath!);
-      panel.webview.postMessage({ command: 'metadataUpdated', metadata: currentDestMetadata, files: destFiles.map(f => ({ name: f.name, path: f.path })) });
+      await postDestinationState(panel, 'metadataUpdated');
       panel.webview.postMessage({ command: 'transferComplete', message: `${files.length} file(s) transferred to destination` });
     } else if (sourceFolder === 'destination' && destFolder === 'source') {
       if (!sourceFolderPath) { vscode.window.showErrorMessage('Select source folder first.'); return; }
@@ -248,9 +255,7 @@ async function transferFiles(
           console.error(`[FT] Failed to transfer ${file.name}:`, e.message);
         }
       }
-      currentDestMetadata = await metadata.loadMetadata(destFolderPath);
-      const destFiles = await listDestinationFiles(destFolderPath);
-      panel.webview.postMessage({ command: 'metadataUpdated', metadata: currentDestMetadata, files: destFiles.map(f => ({ name: f.name, path: f.path })) });
+      await postDestinationState(panel, 'metadataUpdated');
       panel.webview.postMessage({ command: 'transferComplete', message: `${transferredCount} file(s) transferred back to source` });
     }
   } catch (error: any) {
@@ -326,10 +331,138 @@ async function refreshFolder(folderType: 'source' | 'destination') {
     const files = await listDirContents(currentSourceBrowsePath || folderPath);
     panel.webview.postMessage({ command: 'sourceRefreshed', files: mapDirEntries(files) });
   } else {
-    currentDestMetadata = await metadata.loadMetadata(folderPath);
-    const files = await listDestinationFiles(folderPath);
-    panel.webview.postMessage({ command: 'destinationFolderSelected', path: folderPath, files: files.map(f => ({ name: f.name, path: f.path })), metadata: currentDestMetadata });
+    await postDestinationState(panel, 'refreshDestinationComplete');
   }
+}
+
+async function buildDestinationState(folderPath: string): Promise<{
+  metadata: Record<string, string>;
+  files: Array<{ name: string; path: string }>;
+  diffFlags: Record<string, boolean>;
+}> {
+  const loadedMetadata = await metadata.loadMetadata(folderPath);
+  const files = await listDestinationFiles(folderPath);
+  const diffFlags = await computeDiffFlags(files, loadedMetadata);
+
+  currentDestMetadata = loadedMetadata;
+  currentDestDiffFlags = diffFlags;
+
+  return {
+    metadata: loadedMetadata,
+    files,
+    diffFlags
+  };
+}
+
+async function postDestinationState(
+  targetPanel: vscode.WebviewPanel,
+  command: 'destinationFolderSelected' | 'metadataUpdated' | 'refreshDestinationComplete'
+) {
+  if (!destFolderPath) {
+    return;
+  }
+
+  const state = await buildDestinationState(destFolderPath);
+  targetPanel.webview.postMessage({
+    command,
+    path: destFolderPath,
+    files: state.files.map(f => ({ name: f.name, path: f.path })),
+    metadata: state.metadata,
+    diffFlags: state.diffFlags
+  });
+}
+
+function setupSourceFolderWatcher(folderPath: string | undefined) {
+  if (sourceFolderWatcher) {
+    sourceFolderWatcher.dispose();
+    sourceFolderWatcher = undefined;
+  }
+
+  if (!folderPath) {
+    return;
+  }
+
+  sourceFolderWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(folderPath), '**/*'));
+  sourceFolderWatcher.onDidCreate(() => scheduleRefresh(true, true));
+  sourceFolderWatcher.onDidChange(() => scheduleRefresh(true, true));
+  sourceFolderWatcher.onDidDelete(() => scheduleRefresh(true, true));
+}
+
+function setupDestFolderWatcher(folderPath: string | undefined) {
+  if (destFolderWatcher) {
+    destFolderWatcher.dispose();
+    destFolderWatcher = undefined;
+  }
+
+  if (!folderPath) {
+    return;
+  }
+
+  destFolderWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(folderPath), '**/*'));
+  destFolderWatcher.onDidCreate(() => scheduleRefresh(false, true));
+  destFolderWatcher.onDidChange(() => scheduleRefresh(false, true));
+  destFolderWatcher.onDidDelete(() => scheduleRefresh(false, true));
+}
+
+function scheduleRefresh(refreshSource: boolean, refreshDestination: boolean) {
+  pendingSourceRefresh = pendingSourceRefresh || refreshSource;
+  pendingDestRefresh = pendingDestRefresh || refreshDestination;
+
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+  }
+
+  refreshTimer = setTimeout(async () => {
+    const doSource = pendingSourceRefresh;
+    const doDest = pendingDestRefresh;
+    pendingSourceRefresh = false;
+    pendingDestRefresh = false;
+
+    if (doSource) {
+      await refreshFolder('source');
+    }
+    if (doDest) {
+      await refreshFolder('destination');
+    }
+  }, 250);
+}
+
+async function handleSavedFile(savedFilePath: string) {
+  if (!panel) {
+    return;
+  }
+
+  const inSourceFolder = isPathInsideFolder(savedFilePath, sourceFolderPath);
+  const inDestFolder = isPathInsideFolder(savedFilePath, destFolderPath);
+
+  if (!inSourceFolder && !inDestFolder) {
+    return;
+  }
+
+  scheduleRefresh(inSourceFolder, true);
+}
+
+async function refreshDestinationIndicators() {
+  if (!panel || !destFolderPath) {
+    return;
+  }
+
+  await postDestinationState(panel, 'destinationFolderSelected');
+}
+
+function normalizePathForCompare(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInsideFolder(filePath: string, folderPath: string | undefined): boolean {
+  if (!folderPath) {
+    return false;
+  }
+
+  const normalizedFilePath = normalizePathForCompare(filePath);
+  const normalizedFolderPath = normalizePathForCompare(folderPath);
+  return normalizedFilePath === normalizedFolderPath || normalizedFilePath.startsWith(`${normalizedFolderPath}${path.sep}`);
 }
 
 async function deleteFilesInFolder(
@@ -404,6 +537,18 @@ async function getSelectedDestPath(): Promise<string | undefined> {
 }
 
 export function deactivate() {
+  if (sourceFolderWatcher) {
+    sourceFolderWatcher.dispose();
+    sourceFolderWatcher = undefined;
+  }
+  if (destFolderWatcher) {
+    destFolderWatcher.dispose();
+    destFolderWatcher = undefined;
+  }
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = undefined;
+  }
   if (panel) {
     panel.dispose();
   }
