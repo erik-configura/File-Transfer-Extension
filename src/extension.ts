@@ -93,13 +93,6 @@ function setupPanelMessageHandling(panelInstance: vscode.WebviewPanel) {
         case 'selectDestFolder':
           await selectFolder('destination');
           break;
-        case 'refreshSource':
-          if (sourceFolderPath && currentSourceBrowsePath && panel) {
-            const files = await listDirContents(currentSourceBrowsePath!);
-            panel.webview.postMessage({ command: 'sourceRefreshed', files: mapDirEntries(files) });
-            await refreshDestinationIndicators();
-          }
-          break;
         case 'enterDirectory':
           if (message.path && sourceFolderPath && message.path.startsWith(sourceFolderPath) && panel) {
             currentSourceBrowsePath = message.path;
@@ -117,11 +110,6 @@ function setupPanelMessageHandling(panelInstance: vscode.WebviewPanel) {
               const files = await listDirContents(currentSourceBrowsePath!);
               panel.webview.postMessage({ command: 'enteredDirectory', path: currentSourceBrowsePath, files: mapDirEntries(files) });
             }
-          }
-          break;
-        case 'refreshDestination':
-          if (destFolderPath && panel) {
-            await refreshFolder('destination');
           }
           break;
         case 'requestInitialState':

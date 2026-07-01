@@ -229,7 +229,6 @@ export function getWebviewContent(): string {
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button class="open-folder-btn" onclick="navigateUp()" id="upBtn" title="Up">⬆</button>
-          <button class="open-folder-btn" onclick="refreshSource()" id="refreshBtn" title="Refresh">⟳</button>
           <button class="open-folder-btn" onclick="selectSourceFolder()">Open Folder</button>
         </div>
       </div>
@@ -255,7 +254,6 @@ export function getWebviewContent(): string {
           <div class="pane-path" id="destPath">No folder selected</div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="open-folder-btn" onclick="refreshDestination()" id="destRefreshBtn" title="Refresh">⟳</button>
           <button class="open-folder-btn" onclick="selectDestFolder()">Open Folder</button>
         </div>
       </div>
@@ -282,11 +280,6 @@ export function getWebviewContent(): string {
       vscode.postMessage({ command: 'selectSourceFolder' });
     }
 
-    function refreshSource() {
-      if (!sourceFolderPath) { showMessage('No source folder selected', 'error'); return; }
-      vscode.postMessage({ command: 'refreshSource' });
-    }
-
     function navigateUp() {
       if (!sourceFolderPath) { return; }
       vscode.postMessage({ command: 'navigateUp' });
@@ -298,11 +291,6 @@ export function getWebviewContent(): string {
         return;
       }
       vscode.postMessage({ command: 'enterDirectory', path: file.path });
-    }
-
-    function refreshDestination() {
-      if (!destFolderPath) { showMessage('No destination folder selected', 'error'); return; }
-      vscode.postMessage({ command: 'refreshDestination' });
     }
 
     function selectDestFolder() {
