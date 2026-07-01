@@ -72,6 +72,30 @@ export function getWebviewContent(): string {
       background-color: var(--vscode-button-hoverBackground);
     }
 
+    .search-row {
+      display: flex;
+      gap: 6px;
+      padding: 8px;
+      border-bottom: 1px solid var(--vscode-input-border);
+      background-color: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-sideBar-background));
+    }
+
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      background-color: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 2px;
+      font-size: 12px;
+      padding: 6px 8px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--vscode-focusBorder);
+    }
+
     .file-list {
       flex: 1;
       overflow-y: auto;
@@ -232,6 +256,15 @@ export function getWebviewContent(): string {
           <button class="open-folder-btn" onclick="selectSourceFolder()">Open Folder</button>
         </div>
       </div>
+      <div class="search-row">
+        <input
+          id="sourceSearchInput"
+          class="search-input"
+          type="text"
+          placeholder="Filter source files"
+          oninput="handleSourceSearchInput()"
+        />
+      </div>
       <ul class="file-list" id="sourceList">
         <div class="empty-state">Select a source folder to begin</div>
       </ul>
@@ -257,6 +290,15 @@ export function getWebviewContent(): string {
           <button class="open-folder-btn" onclick="selectDestFolder()">Open Folder</button>
         </div>
       </div>
+      <div class="search-row">
+        <input
+          id="destSearchInput"
+          class="search-input"
+          type="text"
+          placeholder="Filter destination files"
+          oninput="handleDestSearchInput()"
+        />
+      </div>
       <ul class="file-list" id="destList">
         <div class="empty-state">Select a destination folder to begin</div>
       </ul>
@@ -275,6 +317,8 @@ export function getWebviewContent(): string {
     let selectedDestFiles = [];
     let destMetadata = {}; // destName -> originalPath
     let destDiffFlags = {}; // destName -> true when different from referenced source
+    let sourceQuery = '';
+    let destQuery = '';
 
     function selectSourceFolder() {
       vscode.postMessage({ command: 'selectSourceFolder' });
@@ -295,6 +339,18 @@ export function getWebviewContent(): string {
 
     function selectDestFolder() {
       vscode.postMessage({ command: 'selectDestFolder' });
+    }
+
+    function handleSourceSearchInput() {
+      const input = document.getElementById('sourceSearchInput');
+      sourceQuery = input ? input.value : '';
+      updateSourceUI();
+    }
+
+    function handleDestSearchInput() {
+      const input = document.getElementById('destSearchInput');
+      destQuery = input ? input.value : '';
+      updateDestUI();
     }
 
     function transferToDestination() {
@@ -359,14 +415,56 @@ export function getWebviewContent(): string {
       updateDestUI();
     }
 
+    function normalizeSearchValue(value) {
+      return (value || '').trim().toLowerCase();
+    }
+
+    function matchesSourceQuery(file) {
+      const query = normalizeSearchValue(sourceQuery);
+      if (query.length < 1) {
+        return true;
+      }
+
+      const haystack = [
+        file.name,
+        file.relativePath || ''
+      ].join(' ').toLowerCase();
+
+      return haystack.includes(query);
+    }
+
+    function matchesDestQuery(file) {
+      const query = normalizeSearchValue(destQuery);
+      if (query.length < 1) {
+        return true;
+      }
+
+      const originalPath = destMetadata[file.name] || '';
+      const normalizedOriginalPath = originalPath.split(String.fromCharCode(92)).join('/');
+      const originalFileName = normalizedOriginalPath.split('/').pop() || '';
+      const haystack = [
+        file.name,
+        originalFileName
+      ].join(' ').toLowerCase();
+
+      return haystack.includes(query);
+    }
+
     function updateSourceUI() {
       const list = document.getElementById('sourceList');
       if (sourceFiles.length === 0) {
         list.innerHTML = '<div class="empty-state">No files in this folder</div>';
         return;
       }
+
+      const visibleSourceFiles = sourceFiles.filter(matchesSourceQuery);
+      if (visibleSourceFiles.length === 0) {
+        list.innerHTML = '<div class="empty-state">No matching files</div>';
+        return;
+      }
       
-      list.innerHTML = sourceFiles.map(function(file, index) {
+      list.innerHTML = visibleSourceFiles.map(function(file) {
+        const index = sourceFiles.findIndex(f => f.path === file.path);
         const isSelected = selectedSourceFiles.some(f => f.path === file.path);
         const icon = file.isDirectory ? '📁' : '📄';
         const tooltip = file.isDirectory
@@ -392,8 +490,15 @@ export function getWebviewContent(): string {
         list.innerHTML = '<div class="empty-state">No files in this folder</div>';
         return;
       }
+
+      const visibleDestFiles = destFiles.filter(matchesDestQuery);
+      if (visibleDestFiles.length === 0) {
+        list.innerHTML = '<div class="empty-state">No matching files</div>';
+        return;
+      }
       
-      list.innerHTML = destFiles.map(function(file, index) {
+      list.innerHTML = visibleDestFiles.map(function(file) {
+        const index = destFiles.findIndex(f => f.path === file.path);
         const isSelected = selectedDestFiles.some(f => f.path === file.path);
         const orig = destMetadata[file.name] || file.path;
         const isDifferent = !!destDiffFlags[file.name];
